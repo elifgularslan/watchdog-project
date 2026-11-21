@@ -15,7 +15,7 @@ void handle_signal(int sig) {
 
 int main(int argc, char *argv[]) {
     char worker_name[32] = "Worker";
-    int lifespan = -1; /* -1: sonsuz döngü, >0: N saniye sonra normal çıkış (test için) */
+    int lifespan = -1; /* Calisma suresi (sn), -1 ise sonsuz */
 
     if (argc > 1) {
         strncpy(worker_name, argv[1], sizeof(worker_name) - 1);
@@ -26,7 +26,6 @@ int main(int argc, char *argv[]) {
         lifespan = atoi(argv[2]);
     }
 
-    /* SIGTERM ve SIGINT sinyallerini yakala (Graceful shutdown testi için) */
 #if defined(_WIN32) && !defined(__CYGWIN__)
     signal(SIGTERM, handle_signal);
     signal(SIGINT, handle_signal);
@@ -39,7 +38,7 @@ int main(int argc, char *argv[]) {
     sigaction(SIGINT, &sa, NULL);
 #endif
 
-    printf("[%s] Baslatildi (PID: %d). Lifespan: %d sn\n", worker_name, getpid(), lifespan);
+    printf("[%s] Baslatildi (PID: %d)\n", worker_name, getpid());
     fflush(stdout);
 
     int elapsed = 0;
@@ -47,15 +46,14 @@ int main(int argc, char *argv[]) {
         sleep(1);
         elapsed++;
 
-        /* Eger test amaciyla bir omur (lifespan) verildiyse normal sekilde cık */
         if (lifespan > 0 && elapsed >= lifespan) {
-            printf("[%s] (PID: %d) Gorevini normal sekilde tamamladi ve kapaniyor.\n", worker_name, getpid());
+            printf("[%s] (PID: %d) Calisma suresi bitti, cikiyor.\n", worker_name, getpid());
             fflush(stdout);
-            return EXIT_SUCCESS; /* Normal cikis: WIFEXITED */
+            return EXIT_SUCCESS;
         }
     }
 
-    printf("[%s] (PID: %d) SIGTERM alindi, guvenli sekilde kapaniyor.\n", worker_name, getpid());
+    printf("[%s] (PID: %d) Sinyal alindi, kapaniyor.\n", worker_name, getpid());
     fflush(stdout);
     return EXIT_SUCCESS;
 }
