@@ -3,7 +3,7 @@
 
 #include "process_manager.h"
 
-/* Otomatik Yeniden Başlatma ve Timeout Fonksiyonları (Rana'nın Görevleri) */
+/* Otomatik yeniden baslatma ve timeout fonksiyon prototipleri */
 int restart_manager_init(void);
 int restart_manager_handle_exit(int process_index, int exit_status, int is_signaled);
 void restart_manager_periodic_check(void);

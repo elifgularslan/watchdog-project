@@ -3,7 +3,7 @@
 
 #include <signal.h>
 
-/* Global async-signal-safe bayraklar (Elif'in Görevleri) */
+/* Global async-signal-safe bayraklar */
 extern volatile sig_atomic_t g_shutdown_requested;
 extern volatile sig_atomic_t g_sigusr1_received;
 extern volatile sig_atomic_t g_sigchld_received;

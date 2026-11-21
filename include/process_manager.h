@@ -21,12 +21,12 @@ typedef struct {
     char executable_path[256];  /* Çalıştırılacak ikili dosya yolu (örn: "./workers/worker") */
     char *args[16];             /* execv için argüman listesi */
     ProcessState state;         /* Çalışıyor, durdu, sonlandı */
-    int restart_count;          /* Kaç kez yeniden başlatıldı (Rana'nın limiti: max 3) */
+    int restart_count;          /* Yeniden baslatilma sayisi (maksimum 3) */
     time_t start_time;          /* Başlatılma zamanı (Loglama ve raporlama için) */
 } ProcessInfo;
 
 /*
- * Process Manager Fonksiyon Prototipleri (Ayşe'nin Görevleri)
+ * Process Manager Fonksiyon Prototipleri
  */
 
 /* Tabloyu ve yapıları sıfırlar/hazırlar */
@@ -44,7 +44,7 @@ void process_manager_handle_sigchld(void);
 /* Kapanışta (graceful shutdown) tüm çalışan alt süreçlere sinyal gönderir (SIGTERM / SIGKILL) */
 void process_manager_terminate_all(int signal_num);
 
-/* Süreç listesini ve eleman sayısını döndürür (Vildan'ın logger'ı ve Elif'in durumu görmesi için) */
+/* Surec listesini ve eleman sayisini dondurur */
 ProcessInfo* process_manager_get_list(int *count);
 
 /* PID değerine göre ilgili süreci bulur */

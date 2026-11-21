@@ -130,7 +130,7 @@ void process_manager_handle_sigchld(void) {
                      g_processes[found_index].name, pid, exit_code);
             internal_log(log_buf);
 
-            /* Eger cikis kodu hataliysa (0 disinda) Rana'nin restart mekanizmasina bildir */
+            /* Eger cikis kodu hataliysa (0 disinda) restart mekanizmasina bildir */
             if (exit_code != 0) {
                 restart_manager_handle_exit(found_index, exit_code, 0);
             }
@@ -141,7 +141,7 @@ void process_manager_handle_sigchld(void) {
                      g_processes[found_index].name, pid, term_sig);
             internal_log(log_buf);
 
-            /* Beklenmedik kapanma! Rana'nin restart mekanizmasi devreye girer */
+            /* Beklenmedik kapanma durumunda restart mekanizmasi devreye girer */
             restart_manager_handle_exit(found_index, term_sig, 1);
         }
     }
