@@ -13,9 +13,11 @@
 #include "../include/logger.h"
 #include "../include/restart_manager.h"
 
+/* Takip edilen tum sureclerin tutuldugu dizi */
 static ProcessInfo g_processes[MAX_PROCESSES];
 static int g_process_count = 0;
 
+/* Log modulu baglanana kadar ekrana durum basan yardimci fonksiyon */
 static void internal_log(const char *msg) {
     printf("[PROCESS_MANAGER] %s\n", msg);
     fflush(stdout);
@@ -25,7 +27,7 @@ int process_manager_init(void) {
     g_process_count = 0;
     memset(g_processes, 0, sizeof(g_processes));
 
-    /* Baslangic worker surecleri */
+    /* Varsayilan olarak takip edilecek iki farkli worker sureci tanimliyoruz */
     g_processes[0].pid = -1;
     strncpy(g_processes[0].name, "Worker_1", sizeof(g_processes[0].name) - 1);
     strncpy(g_processes[0].executable_path, "./workers/worker", sizeof(g_processes[0].executable_path) - 1);
@@ -53,6 +55,7 @@ int process_manager_spawn(int index) {
         return -1;
     }
 
+    /* Yeni bir alt surec olusturmak icin fork cagiriyoruz */
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -61,13 +64,15 @@ int process_manager_spawn(int index) {
     }
 
     if (pid == 0) {
-        /* Cocuk surec calistirilir */
+        /* Cocuk surec: execv ile hedef calistirilabilir dosya belleğe yuklenir */
         execv(g_processes[index].executable_path, g_processes[index].args);
+        
+        /* execv basarisiz olursa calismaya devam etmemesi icin hata verip cikar */
         perror("execv hatasi");
         exit(EXIT_FAILURE);
     }
 
-    /* Ana surec tarafinda kayit */
+    /* Ana surec: olusan cocugun PID ve baslangic bilgilerini kaydeder */
     g_processes[index].pid = pid;
     g_processes[index].state = PROCESS_STATE_RUNNING;
     g_processes[index].start_time = time(NULL);
@@ -93,7 +98,10 @@ void process_manager_handle_sigchld(void) {
     int status;
     pid_t pid;
 
-    /* Sonlanan cocuk surecleri topla */
+    /* 
+     * Birden fazla cocuk ayni anda kapanabilir. 
+     * WNOHANG ile bekleme yapmadan sonlanan tum cocuklari sirayla topluyoruz.
+     */
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         int found_index = -1;
         for (int i = 0; i < g_process_count; i++) {
@@ -110,6 +118,7 @@ void process_manager_handle_sigchld(void) {
         g_processes[found_index].pid = -1;
         g_processes[found_index].state = PROCESS_STATE_TERMINATED;
 
+        /* Surec normal mi cikti yoksa sinyalle mi sonlandi kontrolu */
         if (WIFEXITED(status)) {
             int exit_code = WEXITSTATUS(status);
             char log_buf[128];
@@ -117,6 +126,7 @@ void process_manager_handle_sigchld(void) {
                      g_processes[found_index].name, pid, exit_code);
             internal_log(log_buf);
 
+            /* Eger hata koduyla cikmissa restart modulunu bilgilendir */
             if (exit_code != 0) {
                 restart_manager_handle_exit(found_index, exit_code, 0);
             }
@@ -127,13 +137,14 @@ void process_manager_handle_sigchld(void) {
                      g_processes[found_index].name, pid, term_sig);
             internal_log(log_buf);
 
-            /* Beklenmedik kapanma durumu */
+            /* Beklenmedik sinyalle olum durumunda restart tetiklenir */
             restart_manager_handle_exit(found_index, term_sig, 1);
         }
     }
 }
 
 void process_manager_terminate_all(int signal_num) {
+    /* Kapanis sirasinda hala aktif olan tum cocuklara sinyal gonder */
     for (int i = 0; i < g_process_count; i++) {
         if (g_processes[i].state == PROCESS_STATE_RUNNING && g_processes[i].pid > 0) {
             char log_buf[128];
@@ -168,8 +179,10 @@ int process_manager_setup_timer(int interval_seconds) {
     }
 
     struct itimerval timer;
+    /* Periyodik olarak tekrarlanacak sure */
     timer.it_interval.tv_sec = interval_seconds;
     timer.it_interval.tv_usec = 0;
+    /* Ilk calisma gecikmesi */
     timer.it_value.tv_sec = interval_seconds;
     timer.it_value.tv_usec = 0;
 
@@ -185,13 +198,16 @@ int process_manager_setup_timer(int interval_seconds) {
 }
 
 void process_manager_periodic_check(void) {
+    /* Once varsa sonlanan zombi surecleri temizle */
     process_manager_handle_sigchld();
 
-    /* Calisan sureclerin durumunu kontrol et */
+    /* Calisan sureclerin gercekten hayatta olup olmadigini test et */
     for (int i = 0; i < g_process_count; i++) {
         if (g_processes[i].state == PROCESS_STATE_RUNNING && g_processes[i].pid > 0) {
+            /* 0 sinyali gondererek PID'nin varligi kontrol edilir */
             if (kill(g_processes[i].pid, 0) == -1) {
                 if (errno == ESRCH) {
+                    /* Surec listeden kaybolmus */
                     char log_buf[128];
                     snprintf(log_buf, sizeof(log_buf), "Surec bulunamadi: %s (PID: %d)",
                              g_processes[i].name, g_processes[i].pid);

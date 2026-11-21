@@ -5,8 +5,10 @@
 #include <signal.h>
 #include <string.h>
 
+/* Donguyu kontrol eden sinyal bayragi */
 static volatile sig_atomic_t keep_running = 1;
 
+/* Sonlandirma sinyali geldiginde bayragi indirir */
 void handle_signal(int sig) {
     if (sig == SIGTERM || sig == SIGINT) {
         keep_running = 0;
@@ -15,7 +17,7 @@ void handle_signal(int sig) {
 
 int main(int argc, char *argv[]) {
     char worker_name[32] = "Worker";
-    int lifespan = -1; /* Calisma suresi (sn), -1 ise sonsuz */
+    int lifespan = -1; /* Calisma suresi (sn), -1 ise surekli calisir */
 
     if (argc > 1) {
         strncpy(worker_name, argv[1], sizeof(worker_name) - 1);
@@ -26,6 +28,7 @@ int main(int argc, char *argv[]) {
         lifespan = atoi(argv[2]);
     }
 
+    /* Kapanis sinyallerini yakalamak icin handler tanimliyoruz */
 #if defined(_WIN32) && !defined(__CYGWIN__)
     signal(SIGTERM, handle_signal);
     signal(SIGINT, handle_signal);
@@ -46,6 +49,7 @@ int main(int argc, char *argv[]) {
         sleep(1);
         elapsed++;
 
+        /* Belirtilen omur suresi bittiyse normal sekilde sonlan */
         if (lifespan > 0 && elapsed >= lifespan) {
             printf("[%s] (PID: %d) Calisma suresi bitti, cikiyor.\n", worker_name, getpid());
             fflush(stdout);
