@@ -50,4 +50,10 @@ ProcessInfo* process_manager_get_list(int *count);
 /* PID değerine göre ilgili süreci bulur */
 ProcessInfo* process_manager_get_by_pid(pid_t pid);
 
+/* Periyodik kontrol mekanizmasını (setitimer / SIGALRM) yapılandırır */
+int process_manager_setup_timer(int interval_seconds);
+
+/* SIGALRM tetiklendiğinde veya periyodik kontrolde süreçlerin sağlık durumunu denetler */
+void process_manager_periodic_check(void);
+
 #endif /* PROCESS_MANAGER_H */

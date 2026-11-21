@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <sys/time.h>
 #include <string.h>
 #include <errno.h>
 
@@ -174,3 +175,57 @@ ProcessInfo* process_manager_get_by_pid(pid_t pid) {
     }
     return NULL;
 }
+
+int process_manager_setup_timer(int interval_seconds) {
+    if (interval_seconds <= 0) {
+        return -1;
+    }
+
+    struct itimerval timer;
+    /* Periyodik tekrar suresi */
+    timer.it_interval.tv_sec = interval_seconds;
+    timer.it_interval.tv_usec = 0;
+    /* Ilk tetiklenme suresi */
+    timer.it_value.tv_sec = interval_seconds;
+    timer.it_value.tv_usec = 0;
+
+    if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {
+        perror("[PROCESS_MANAGER] setitimer() basarisiz");
+        return -1;
+    }
+
+    char log_buf[128];
+    snprintf(log_buf, sizeof(log_buf), "Periyodik kontrol zamanlayicisi (%d sn) baslatildi", interval_seconds);
+    internal_log(log_buf);
+    return 0;
+}
+
+void process_manager_periodic_check(void) {
+    /* Once sonlanan/zombi surecleri topla */
+    process_manager_handle_sigchld();
+
+    /* Calisan sureclerin saglik kontrolunu gerceklestir */
+    for (int i = 0; i < g_process_count; i++) {
+        if (g_processes[i].state == PROCESS_STATE_RUNNING && g_processes[i].pid > 0) {
+            /* kill(pid, 0) POSIX uyarinca surecin varligini denetler */
+            if (kill(g_processes[i].pid, 0) == -1) {
+                if (errno == ESRCH) {
+                    /* Surec artik mevcut degil */
+                    char log_buf[128];
+                    snprintf(log_buf, sizeof(log_buf), "Periyodik kontrol uyarisi: %s (PID: %d) bulunamadi!",
+                             g_processes[i].name, g_processes[i].pid);
+                    internal_log(log_buf);
+                    g_processes[i].state = PROCESS_STATE_TERMINATED;
+                    g_processes[i].pid = -1;
+                }
+            } else {
+                /* Surec saglikli sekilde yasamaya devam ediyor */
+                char log_buf[128];
+                snprintf(log_buf, sizeof(log_buf), "Periyodik kontrol: %s (PID: %d) calisiyor",
+                         g_processes[i].name, g_processes[i].pid);
+                internal_log(log_buf);
+            }
+        }
+    }
+}
+

@@ -27,12 +27,17 @@ int main(int argc, char *argv[]) {
     }
 
     /* SIGTERM ve SIGINT sinyallerini yakala (Graceful shutdown testi için) */
+#if defined(_WIN32) && !defined(__CYGWIN__)
+    signal(SIGTERM, handle_signal);
+    signal(SIGINT, handle_signal);
+#else
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_signal;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGINT, &sa, NULL);
+#endif
 
     printf("[%s] Baslatildi (PID: %d). Lifespan: %d sn\n", worker_name, getpid(), lifespan);
     fflush(stdout);
