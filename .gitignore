@@ -53,3 +53,9 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Project materials & local archives
+*.pdf
+*.pdf.txt
+*.zip
+
