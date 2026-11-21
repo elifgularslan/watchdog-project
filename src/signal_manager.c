@@ -7,6 +7,7 @@
 volatile sig_atomic_t g_shutdown_requested = 0;
 volatile sig_atomic_t g_sigusr1_received = 0;
 volatile sig_atomic_t g_sigchld_received = 0;
+volatile sig_atomic_t g_sigalrm_received = 0;
 
 /* Gelen sinyalleri yakalayan handler */
 static void signal_handler(int signo)
@@ -24,6 +25,9 @@ static void signal_handler(int signo)
 
         case SIGCHLD:
             g_sigchld_received = 1;
+            break;
+        case SIGALRM:
+            g_sigalrm_received = 1;
             break;
 
         default:
@@ -52,6 +56,10 @@ int signal_manager_init(void)
 
     /* Durum raporlama sinyali */
     if (sigaction(SIGUSR1, &sa, NULL) == -1)
+        return -1;
+    
+      /* Periyodik kontrol sinyali */
+    if (sigaction(SIGALRM, &sa, NULL) == -1)
         return -1;
 
     /* Child process sonlanma sinyali */

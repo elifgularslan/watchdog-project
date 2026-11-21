@@ -7,6 +7,7 @@
 extern volatile sig_atomic_t g_shutdown_requested;
 extern volatile sig_atomic_t g_sigusr1_received;
 extern volatile sig_atomic_t g_sigchld_received;
+extern volatile sig_atomic_t g_sigalrm_received;
 
 int signal_manager_init(void);
 
