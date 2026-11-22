@@ -155,3 +155,30 @@ int restart_manager_handle_exit(
 
     return try_restart(process_index);
 }
+void restart_manager_periodic_check(void)
+{
+    if (g_shutdown_requested)
+    {
+        memset(pending_restart, 0, sizeof(pending_restart));
+        return;
+    }
+
+    int count = 0;
+    ProcessInfo *processes = process_manager_get_list(&count);
+
+    if (processes == NULL)
+        return;
+
+    for (int i = 0; i < count && i < MAX_PROCESSES; i++)
+    {
+        if (g_shutdown_requested)
+            break;
+
+        /*
+         * Yalnizca bekleyen restart denemelerini ele al.
+         * Normal kapanan surecleri yeniden baslatma.
+         */
+        if (pending_restart[i])
+            try_restart(i);
+    }
+}
