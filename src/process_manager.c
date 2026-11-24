@@ -17,10 +17,12 @@
 static ProcessInfo g_processes[MAX_PROCESSES];
 static int g_process_count = 0;
 
-/* Log modulu baglanana kadar ekrana durum basan yardimci fonksiyon */
+/* Olaylari ekrana ve log dosyasina yazan yardimci fonksiyon */
 static void internal_log(const char *msg) {
     printf("[PROCESS_MANAGER] %s\n", msg);
     fflush(stdout);
+
+    logger_log("%s", msg);
 }
 
 int process_manager_init(void) {
