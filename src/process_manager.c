@@ -66,12 +66,12 @@ int process_manager_spawn(int index) {
     }
 
     if (pid == 0) {
-        /* Cocuk surec: execv ile hedef calistirilabilir dosya belleğe yuklenir */
+        /* Cocuk surec: execv ile hedef calistirilabilir dosya bellege yuklenir */
         execv(g_processes[index].executable_path, g_processes[index].args);
         
-        /* execv basarisiz olursa calismaya devam etmemesi icin hata verip cikar */
+        /* execv basarisiz olursa tampon cakismalarini onlemek icin _exit cagrilir */
         perror("execv hatasi");
-        exit(EXIT_FAILURE);
+        _exit(EXIT_FAILURE);
     }
 
     /* Ana surec: olusan cocugun PID ve baslangic bilgilerini kaydeder */
@@ -104,7 +104,25 @@ void process_manager_handle_sigchld(void) {
      * Birden fazla cocuk ayni anda kapanabilir. 
      * WNOHANG ile bekleme yapmadan sonlanan tum cocuklari sirayla topluyoruz.
      */
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    while (1) {
+        pid = waitpid(-1, &status, WNOHANG);
+
+        if (pid < 0) {
+            if (errno == EINTR) {
+                continue; /* Sinyalle kesildiyse tekrar dene */
+            }
+            if (errno != ECHILD) {
+                char err_buf[128];
+                snprintf(err_buf, sizeof(err_buf), "waitpid hatasi: %s", strerror(errno));
+                internal_log(err_buf);
+            }
+            break;
+        }
+
+        if (pid == 0) {
+            break; /* Durumu degisen baska cocuk yok */
+        }
+
         int found_index = -1;
         for (int i = 0; i < g_process_count; i++) {
             if (g_processes[i].pid == pid) {
@@ -124,8 +142,14 @@ void process_manager_handle_sigchld(void) {
         if (WIFEXITED(status)) {
             int exit_code = WEXITSTATUS(status);
             char log_buf[128];
-            snprintf(log_buf, sizeof(log_buf), "%s (PID: %d) normal kapandi. Cikis kodu: %d",
-                     g_processes[found_index].name, pid, exit_code);
+
+            if (exit_code == 0) {
+                snprintf(log_buf, sizeof(log_buf), "%s (PID: %d) normal kapandi. Cikis kodu: 0",
+                         g_processes[found_index].name, pid);
+            } else {
+                snprintf(log_buf, sizeof(log_buf), "%s (PID: %d) hatali kapandi. Cikis kodu: %d",
+                         g_processes[found_index].name, pid, exit_code);
+            }
             internal_log(log_buf);
 
             /* Eger hata koduyla cikmissa restart modulunu bilgilendir */
@@ -154,7 +178,14 @@ void process_manager_terminate_all(int signal_num) {
                      g_processes[i].name, g_processes[i].pid, signal_num);
             internal_log(log_buf);
 
-            kill(g_processes[i].pid, signal_num);
+            if (kill(g_processes[i].pid, signal_num) == -1) {
+                if (errno != ESRCH) {
+                    char err_buf[128];
+                    snprintf(err_buf, sizeof(err_buf), "%s (PID: %d) sinyal gonderilemedi: %s",
+                             g_processes[i].name, g_processes[i].pid, strerror(errno));
+                    internal_log(err_buf);
+                }
+            }
         }
     }
 }
