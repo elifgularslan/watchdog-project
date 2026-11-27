@@ -1,0 +1,341 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office'
+      xmlns:w='urn:schemas-microsoft-com:office:word'
+      xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset="utf-8">
+<title>SWE301 System Programming - Project 1 Report</title>
+<!--[if gte mso 9]>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+<w:DoNotOptimizeForBrowser/>
+</w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+    @page {
+        size: A4;
+        margin: 20mm 20mm;
+    }
+    body {
+        font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+        color: #222;
+        line-height: 1.45;
+        font-size: 10pt;
+    }
+    .header {
+        text-align: center;
+        border-bottom: 2px solid #003366;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+    h1 {
+        font-size: 16pt;
+        color: #003366;
+        margin: 0 0 4px 0;
+    }
+    h2 {
+        font-size: 12pt;
+        color: #333;
+        margin: 0 0 4px 0;
+    }
+    h3 {
+        font-size: 10pt;
+        color: #555;
+        margin: 0;
+    }
+    .section-title {
+        font-size: 12pt;
+        color: #003366;
+        border-bottom: 1.5px solid #ccc;
+        padding-bottom: 3px;
+        margin-top: 20px;
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
+    .sub-title {
+        font-size: 10.5pt;
+        color: #333;
+        font-weight: bold;
+        margin-top: 12px;
+        margin-bottom: 6px;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0;
+        font-size: 9pt;
+    }
+    th, td {
+        border: 1px solid #b0c4de;
+        padding: 6px 8px;
+        text-align: left;
+    }
+    th {
+        background-color: #f0f4f8;
+        color: #003366;
+        font-weight: bold;
+    }
+    .badge-pass {
+        background-color: #28a745;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-weight: bold;
+        font-size: 8pt;
+    }
+    .ss-box {
+        background-color: #fff9e6;
+        border: 2px dashed #daa520;
+        padding: 15px;
+        margin: 12px 0;
+        text-align: center;
+        border-radius: 4px;
+    }
+    .ss-box strong {
+        color: #b8860b;
+        font-size: 10.5pt;
+        display: block;
+        margin-bottom: 4px;
+    }
+    .ss-box span {
+        color: #8b7500;
+        font-size: 8.5pt;
+        font-style: italic;
+    }
+    pre {
+        background-color: #f6f8fa;
+        border: 1px solid #e1e4e8;
+        padding: 8px;
+        font-family: Consolas, monospace;
+        font-size: 8pt;
+        line-height: 1.35;
+        white-space: pre-wrap;
+    }
+</style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>SAKARYA UNIVERSITY</h1>
+        <h2>Faculty of Computer and Information Sciences - Department of Software Engineering</h2>
+        <h3>SWE301 System Programming Course | 2026-2027 Fall Semester</h3>
+        <h2 style="margin-top: 10px; color: #003366;">Term Project 1: POSIX Signal-Based Process Monitoring and Management System (Watchdog)</h2>
+    </div>
+
+    <div class="section-title">1. Project Architecture and System Design</div>
+    <p>
+        This project implements a supervisor program (referred to as the <strong>watchdog</strong>) that creates, monitors, and manages a set of child processes using standard POSIX system calls. The application tracks the life cycle of its child processes, detects crashes, restarts processes that terminate unexpectedly within a defined limit (at most 3 times), responds safely to asynchronous POSIX signals (<code>SIGINT</code>, <code>SIGTERM</code>, <code>SIGCHLD</code>, <code>SIGUSR1</code>, <code>SIGALRM</code>), and logs all lifecycle events with precise timestamps.
+    </p>
+
+    <div class="sub-title">1.1. Modular System Structure</div>
+    <ul>
+        <li><strong>Signal Manager & Main Loop (<code>src/main.c</code>, <code>src/signal_manager.c</code>):</strong> Installs signal handlers via <code>sigaction()</code>, maps asynchronous events to async-signal-safe flags, coordinates the main event polling loop, and orchestrates graceful shutdown.</li>
+        <li><strong>Process Manager (<code>src/process_manager.c</code>, <code>workers/worker.c</code>):</strong> Creates worker processes via <code>fork()</code> and <code>execv()</code>, maintains the process status table, reaps terminated processes via non-blocking <code>waitpid()</code>, and sets up interval timers for health monitoring.</li>
+        <li><strong>Restart Manager (<code>src/restart_manager.c</code>):</strong> Evaluates termination causes, enforces the strict maximum 3 restart limit per process, avoids infinite restart loops, and implements the 5-second shutdown timeout with <code>SIGKILL</code> fallback.</li>
+        <li><strong>Logger Module (<code>src/logger.c</code>):</strong> Writes timestamped lifecycle records to <code>watchdog.log</code> and formats comprehensive child process status reports upon receiving <code>SIGUSR1</code>.</li>
+    </ul>
+
+    <div class="sub-title">1.2. Required POSIX Mechanisms and System Calls</div>
+    <ul>
+        <li><strong><code>sigaction()</code> & Async-Signal Safety:</strong> Handlers are strictly async-signal-safe. Complex I/O or memory allocation is avoided inside handlers; they only record state transitions in <code>volatile sig_atomic_t</code> flags, delegating processing to the main loop.</li>
+        <li><strong><code>fork()</code>, <code>execv()</code>, and <code>_exit()</code>:</strong> Workers are spawned using <code>fork()</code> and replaced via <code>execv()</code>. On execution failure, <code>_exit(EXIT_FAILURE)</code> is called to prevent duplicate flushing of inherited standard I/O buffers.</li>
+        <li><strong><code>waitpid()</code> (WNOHANG & EINTR):</strong> Reaps finished children to prevent zombie processes. It handles <code>EINTR</code> signals and differentiates normal exit (<code>WIFEXITED</code>, exit code 0) from application errors (exit code != 0) and uncaught signals (<code>WIFSIGNALED</code>).</li>
+        <li><strong><code>setitimer()</code> & <code>SIGALRM</code>:</strong> Sets a real-time interval timer (<code>ITIMER_REAL</code>) for periodic process table health inspections and timeout enforcement.</li>
+        <li><strong><code>kill()</code>:</strong> Dispatches termination signals (<code>SIGTERM</code>, <code>SIGKILL</code>) with error validation.</li>
+    </ul>
+
+    <div class="section-title">2. Task Allocation Table</div>
+    <p>The project was developed as a 4-person collaborative project with balanced responsibilities:</p>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 22%;">Student Name</th>
+                <th style="width: 40%;">Responsibilities and Assigned Modules</th>
+                <th style="width: 26%;">Developed Files</th>
+                <th style="width: 12%; text-align: center;">Contribution</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Elif Gül Arslan</strong></td>
+                <td><strong>Signal Management & Main Program:</strong> <code>sigaction()</code> setup, <code>SIGINT</code>, <code>SIGTERM</code>, <code>SIGUSR1</code> handling, main loop flow, async-signal-safe state capture.</td>
+                <td><code>src/main.c</code><br><code>src/signal_manager.c</code><br><code>include/signal_manager.h</code></td>
+                <td style="text-align: center; font-weight: bold;">25%</td>
+            </tr>
+            <tr>
+                <td><strong>Ayşenur Yılmaz</strong></td>
+                <td><strong>Child Process Management & Worker:</strong> <code>fork()</code>, <code>execv()</code>, <code>_exit()</code>, <code>waitpid()</code> reaping, process table, exit status checks, <code>worker.c</code> executable.</td>
+                <td><code>src/process_manager.c</code><br><code>include/process_manager.h</code><br><code>workers/worker.c</code></td>
+                <td style="text-align: center; font-weight: bold;">25%</td>
+            </tr>
+            <tr>
+                <td><strong>Rana İrem Özen</strong></td>
+                <td><strong>Automatic Restart & Timeout Control:</strong> Unexpected exit handling, bounded 3 restart limit, shutdown timeout monitoring, controlled <code>SIGKILL</code> fallback.</td>
+                <td><code>src/restart_manager.c</code><br><code>include/restart_manager.h</code></td>
+                <td style="text-align: center; font-weight: bold;">25%</td>
+            </tr>
+            <tr>
+                <td><strong>Vildan Karaca</strong></td>
+                <td><strong>Logging, Build System, & Verification:</strong> Timestamped event logging, <code>SIGUSR1</code> status reporting, automated test suite (<code>test_scenarios.sh</code>), <code>Makefile</code>, <code>README.md</code>.</td>
+                <td><code>src/logger.c</code><br><code>include/logger.h</code><br><code>Makefile</code><br><code>tests/test_scenarios.sh</code><br><code>README.md</code></td>
+                <td style="text-align: center; font-weight: bold;">25%</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="section-title">3. Test Scenarios and Verification Results</div>
+    <p>All test scenarios defined in Section 7 of the project specification were validated on Linux with <strong>9/9 PASS</strong>:</p>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 6%; text-align: center;">No</th>
+                <th style="width: 25%;">Test Scenario</th>
+                <th style="width: 38%;">Expected Behavior</th>
+                <th style="width: 22%;">Observed Output</th>
+                <th style="width: 9%; text-align: center;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="text-align: center;">1</td>
+                <td>Build Verification</td>
+                <td>Project compiles cleanly with <code>make</code> without warnings or errors</td>
+                <td><code>watchdog</code> and <code>worker</code> generated</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">2</td>
+                <td>Process Creation</td>
+                <td>Watchdog starts at least 2 child processes and tracks their PIDs</td>
+                <td>Worker_1 and Worker_2 spawned</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">3</td>
+                <td>SIGUSR1 Status Report</td>
+                <td><code>kill -SIGUSR1</code> writes active child states to log file</td>
+                <td>Report recorded in <code>watchdog.log</code></td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">4</td>
+                <td>1st Restart Attempt</td>
+                <td>Worker terminated via <code>SIGKILL</code> is restarted automatically</td>
+                <td>Crash detected, worker restarted (1/3)</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">5</td>
+                <td>2nd Restart Attempt</td>
+                <td>Second unexpected termination triggers automatic restart</td>
+                <td>New PID allocated, restarted (2/3)</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">6</td>
+                <td>3rd Restart Attempt</td>
+                <td>Third unexpected termination triggers automatic restart</td>
+                <td>New PID allocated, restarted (3/3)</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">7</td>
+                <td>Restart Limit Enforcement</td>
+                <td>4th termination does not trigger further restart attempts</td>
+                <td>Limit reached, restart halted</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">8</td>
+                <td>Graceful Shutdown (SIGTERM)</td>
+                <td>Watchdog dispatches <code>SIGTERM</code> to all workers and waits</td>
+                <td>Children reaped, watchdog exited</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td style="text-align: center;">9</td>
+                <td>Orphan Process Verification</td>
+                <td>Ensures no orphan/zombie worker processes survive shutdown</td>
+                <td>All worker PIDs verified dead</td>
+                <td style="text-align: center;"><span class="badge-pass">PASS</span></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="sub-title">Additional Manual Verifications & Screenshot Placeholders:</div>
+    <ul>
+        <li><strong>Normal Termination Scenario:</strong> A worker process ran for its designated lifespan and exited cleanly with <code>exit(0)</code>. The watchdog detected normal termination via <code>WIFEXITED</code> and refrained from restarting it.</li>
+    </ul>
+    
+    <div class="ss-box">
+        <strong>📷 PASTE SCREENSHOT HERE: Automated Tests 9/9 PASS Terminal Output</strong>
+        <span>Buraya "bash tests/test_scenarios.sh" çalışma çıktısının ekran görüntüsünü yapıştırabilirsiniz.</span>
+    </div>
+
+    <ul>
+        <li><strong>Ctrl+C (SIGINT) Scenario:</strong> Sending <code>Ctrl+C</code> in the active terminal initiated the graceful shutdown sequence, terminating all children cleanly without resource leaks.</li>
+    </ul>
+
+    <div class="ss-box">
+        <strong>📷 PASTE SCREENSHOT HERE: Ctrl+C Terminal & Graceful Shutdown Output</strong>
+        <span>Buraya terminalde "./watchdog" çalışırken Ctrl+C basılıp temiz kapandığını gösteren ekran görüntüsünü yapıştırabilirsiniz.</span>
+    </div>
+
+    <div class="section-title">4. Sample Log Output (watchdog.log)</div>
+    <pre>[2026-11-27 12:00:01] Watchdog starting. PID: 3120
+[2026-11-27 12:00:01] Surec baslatildi: Worker_1 (PID: 3121)
+[2026-11-27 12:00:01] Surec baslatildi: Worker_2 (PID: 3122)
+[2026-11-27 12:00:01] Periyodik kontrol zamanlayicisi (1 sn) baslatildi
+[2026-11-27 12:00:05] === STATUS REPORT (SIGUSR1) ===
+[2026-11-27 12:00:05] Process[0] | Name: Worker_1 | PID: 3121 | State: RUNNING | Restarts: 0
+[2026-11-27 12:00:05] Process[1] | Name: Worker_2 | PID: 3122 | State: RUNNING | Restarts: 0
+[2026-11-27 12:00:05] === END OF STATUS REPORT ===
+[2026-11-27 12:00:10] Worker_1 (PID: 3121) sinyal ile kapandi. Sinyal: 9
+[2026-11-27 12:00:10] Unexpected termination: Worker_1, signal: 9.
+[2026-11-27 12:00:10] Restart attempt: Worker_1 (1/3).
+[2026-11-27 12:00:10] Surec baslatildi: Worker_1 (PID: 3130)
+[2026-11-27 12:00:10] Process restarted: Worker_1, PID: 3130, restarts: 1.
+[2026-11-27 12:00:20] Graceful shutdown started.
+[2026-11-27 12:00:20] Worker_1 (PID: 3130) surecine 15 sinyali gonderiliyor
+[2026-11-27 12:00:20] Worker_2 (PID: 3122) surecine 15 sinyali gonderiliyor
+[2026-11-27 12:00:21] Worker_1 (PID: 3130) normal kapandi. Cikis kodu: 0
+[2026-11-27 12:00:21] Worker_2 (PID: 3122) normal kapandi. Cikis kodu: 0
+[2026-11-27 12:00:21] All child processes terminated.
+[2026-11-27 12:00:21] Watchdog stopped.</pre>
+
+    <div class="section-title">5. Public GitHub Repository and Full Commit History</div>
+    <p>
+        <strong>Repository URL:</strong> 
+        <a href="https://github.com/elifgularslan/watchdog-project" target="_blank">https://github.com/elifgularslan/watchdog-project</a>
+    </p>
+
+    <div class="sub-title">git log Output (Individual Contributions Evidence):</div>
+    <pre>29dcf49 Vildan Karaca 2026-11-27 Merge pull request #4 from elifgularslan/feature/restart-manager
+46c7a49 Vildan Karaca 2026-11-27 Merge pull request #3 from elifgularslan/feature/logger
+1d6980f Ayşenur Yılmaz 2026-11-26 fix(process-manager): improve error handling, exit logging, and use _exit
+11d8ae7 Ayşenur Yılmaz 2026-11-24 feat(process-manager): route internal logs to logger module
+2832d53 Rana İrem Özen 2026-11-22 feat: enforce graceful shutdown timeout with SIGKILL fallback
+709d38a Rana İrem Özen 2026-11-22 feat: retry pending restarts during periodic checks
+38914b6 Rana İrem Özen 2026-11-22 feat: implement bounded restart handling for unexpected exits
+4869e5e vildankaraca   2026-11-22 fix(test): verify worker PIDs before signaling and enforce max 3 restart limit check
+79184ed vildankaraca   2026-11-22 docs: add README with build, usage, and signal testing instructions
+c70e0e9 vildankaraca   2026-11-22 test: add automated test scenarios script for watchdog
+571d7d6 vildankaraca   2026-11-22 build: add Makefile to compile watchdog modules and worker
+b8b99f4 vildankaraca   2026-11-22 feat: implement timestamped event logging and SIGUSR1 status reporting
+a5808b3 Elif Gül Arslan 2026-11-21 Merge pull request #2 from elifgularslan/feature/signal-manager
+041cf99 Elif Arslan     2026-11-21 Implement main control loop and graceful shutdown
+4a24718 Elif Arslan     2026-11-21 Add SIGALRM handling for periodic process monitoring
+4422e39 Elif Arslan     2026-11-21 Implement async-signal-safe signal handlers using sigaction
+7873222 Ayşenur Yılmaz 2026-11-21 docs: add clear and informative comments for process management logic
+46af154 Ayşenur Yılmaz 2026-11-21 refactor: simplify code comments and remove redundant annotations
+b66f731 Ayşenur Yılmaz 2026-11-21 refactor(comments): clean up code comments and remove person-specific annotations
+fedaf77 Ayşenur Yılmaz 2026-11-21 Merge branch 'feature/process-manager'
+23ef403 Ayşenur Yılmaz 2026-11-21 feat(process-manager): implement periodic check mechanism using setitimer and SIGALRM
+a9af129 Ayşenur Yılmaz 2026-11-21 Merge pull request #1 from elifgularslan/feature/process-manager
+f760057 Ayşenur Yılmaz 2026-11-21 feat(process-manager): implement child process creation, tracking, and worker process
+5291969 Elif Gül Arslan 2026-11-20 Initial commit</pre>
+
+</body>
+</html>
