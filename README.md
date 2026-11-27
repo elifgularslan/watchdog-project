@@ -85,6 +85,44 @@ kill -SIGTERM <WATCHDOG_PID>
 
 `SIGINT` güvenli kapanış davranışı, watchdog'un çalıştığı terminalde doğrudan `Ctrl+C` tuşlarına basılarak ayrıca test edilmelidir.
 
+#### Normal Sonlanma Testi (Manuel)
+
+Watchdog'un normal sonlanan bir worker'ı algıladığını ve yeniden başlatmadığını doğrular. Test geçici bir kopyada yapılır; ana proje kodu değiştirilmez.
+
+Proje ana dizininde çalıştırın:
+
+```bash
+testdir=$(mktemp -d /tmp/watchdog-normal-XXXXXX)
+cp -a Makefile src include workers "$testdir/"
+cd "$testdir"
+
+python3 - <<'PY'
+from pathlib import Path
+
+p = Path("src/process_manager.c")
+s = p.read_text()
+old = 'g_processes[0].args[2] = NULL;'
+assert s.count(old) == 1
+p.write_text(s.replace(
+    old,
+    'g_processes[0].args[2] = "3";\n    g_processes[0].args[3] = NULL;'
+))
+PY
+
+make
+./watchdog
+```
+
+Worker_1 üç saniye sonra normal şekilde kapanır. Worker_2 çalışmaya devam eder. Ardından `Ctrl+C` ile watchdog'u kapatın.
+
+**Log kontrolü:**
+
+```bash
+grep -E "Worker_1.*normal kapandi|Restart attempt: Worker_1" watchdog.log
+```
+
+**Beklenen sonuç:** Worker_1, `0` çıkış koduyla kapanır ve yeniden başlatılmaz. `Restart attempt: Worker_1` kaydı oluşmaz.
+
 #### Log Dosyasını İnceleme
 
 ```bash
@@ -180,6 +218,44 @@ kill -SIGTERM <WATCHDOG_PID>
 ```
 
 Graceful shutdown on `SIGINT` can be verified by pressing `Ctrl+C` directly in the terminal where the watchdog is running.
+
+#### Normal Termination Test (Manual)
+
+This test verifies that the watchdog detects a worker's normal termination without restarting it. The test runs in a temporary copy, leaving the original project unchanged.
+
+Run from the project root directory:
+
+```bash
+testdir=$(mktemp -d /tmp/watchdog-normal-XXXXXX)
+cp -a Makefile src include workers "$testdir/"
+cd "$testdir"
+
+python3 - <<'PY'
+from pathlib import Path
+
+p = Path("src/process_manager.c")
+s = p.read_text()
+old = 'g_processes[0].args[2] = NULL;'
+assert s.count(old) == 1
+p.write_text(s.replace(
+    old,
+    'g_processes[0].args[2] = "3";\n    g_processes[0].args[3] = NULL;'
+))
+PY
+
+make
+./watchdog
+```
+
+Worker_1 should exit normally after three seconds, while Worker_2 continues running. Press `Ctrl+C` to stop the watchdog.
+
+**Verify the log:**
+
+```bash
+grep -E "Worker_1.*normal kapandi|Restart attempt: Worker_1" watchdog.log
+```
+
+**Expected result:** Worker_1 exits with status code `0` and is not restarted. No `Restart attempt: Worker_1` entry should appear in the log.
 
 #### Inspecting Logs
 
